@@ -19,6 +19,7 @@ dependencies = [
     "numpy>=1.26.0",
     "pandas>=2.2.0",
     "pyarrow>=18.0.0",
+    "spacy>=3.8.14",
 ]
 
 [project.scripts]
