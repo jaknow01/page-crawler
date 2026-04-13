@@ -13,6 +13,8 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Callable
 
+from src.agents.job_queue import JobQueue
+
 logger = logging.getLogger(__name__)
 
 # Tools the agent is allowed to use without user confirmation.
@@ -135,7 +137,7 @@ def run_agent(
 
 def run_agents_parallel(
     prompt_fn: Callable[[str], str],
-    queue: "JobQueue",  # noqa: F821 — imported by caller to avoid circular dep
+    queue: JobQueue,
     workers: int = 1,
     mcp_config_path: str | Path = "mcp_config.json",
     cwd: str | Path | None = None,
