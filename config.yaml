@@ -25,3 +25,7 @@ coverage_threshold: 0.3
 
 # Język zapytań i treści
 language: "pl"
+
+# Liczba równoległych instancji agenta Claude Code podczas crawlowania konkurencji
+# Można nadpisać zmienną środowiskową CRAWLER_WORKERS
+crawler_workers: 1
