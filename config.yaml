@@ -1,0 +1,27 @@
+# ============================================================
+# Konfiguracja systemu SEO Competitor Analysis
+# ============================================================
+
+# URL własnej strony internetowej (punkt startowy crawlingu)
+own_site_url: "https://example.com"
+
+# Liczba wyników Google analizowanych per zapytanie (top-k)
+k: 5
+
+# Maksymalna głębokość crawlowania podstron konkurencji
+max_depth: 3
+
+# Limit podstron per domena (zabezpieczenie przed bardzo dużymi serwisami)
+max_pages_per_domain: 100
+
+# Model OpenAI do embeddingów
+embedding_model: "text-embedding-3-small"
+
+# Minimalna liczba punktów tworzących klaster (HDBSCAN)
+min_cluster_size: 5
+
+# Próg odległości cosinus — poniżej tej wartości strona uważana jest za "pokrytą" w klastrze
+coverage_threshold: 0.3
+
+# Język zapytań i treści
+language: "pl"

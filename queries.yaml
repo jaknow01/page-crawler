@@ -1,0 +1,79 @@
+# ============================================================
+# Lista zapytań Google — symulacja rzeczywistych wyszukiwań
+# Pokrywa: specjalizacje, lokalizacje, intencje użytkownika
+# ============================================================
+
+queries:
+  # --- Logopedia ---
+  - "logopeda Warszawa"
+  - "logopedia Warszawa dla dzieci"
+  - "logopeda dziecięcy Warszawa"
+  - "logopeda Warszawa NFZ"
+  - "logopeda Warszawa prywatny"
+  - "logopeda Warszawa cena"
+  - "logopeda dla dorosłych Warszawa"
+  - "logopeda Warszawa szybki termin"
+  - "logopedia Mokotów"
+  - "logopedia Ursynów"
+  - "logopedia Wola Warszawa"
+  - "logopeda jąkanie Warszawa"
+  - "logopeda wada wymowy Warszawa"
+  - "logopeda opóźniony rozwój mowy Warszawa"
+
+  # --- Laryngologia ---
+  - "laryngolog Warszawa"
+  - "laryngolog Warszawa prywatny"
+  - "laryngolog Warszawa NFZ"
+  - "laryngolog Warszawa bez skierowania"
+  - "laryngolog dla dzieci Warszawa"
+  - "laryngolog Warszawa szybki termin"
+  - "laryngolog Mokotów"
+  - "laryngolog Ursynów"
+  - "ENT Warszawa"
+  - "laryngolog alergia Warszawa"
+  - "laryngolog chrapanie Warszawa"
+
+  # --- Pediatria ---
+  - "pediatra Warszawa"
+  - "pediatra Warszawa prywatny"
+  - "pediatra Warszawa NFZ"
+  - "pediatra Warszawa szybki termin"
+  - "pediatra Warszawa dziś"
+  - "pediatra Mokotów"
+  - "pediatra Ursynów"
+  - "lekarz dziecięcy Warszawa"
+  - "dobry pediatra Warszawa"
+
+  # --- Przychodnia / ogólne ---
+  - "przychodnia Warszawa prywatna"
+  - "przychodnia Warszawa NFZ"
+  - "przychodnia Mokotów"
+  - "przychodnia Ursynów"
+  - "lekarz rodzinny Warszawa"
+  - "lekarz pierwszego kontaktu Warszawa prywatny"
+  - "internista Warszawa prywatny"
+  - "internista Warszawa szybki termin"
+  - "przychodnia Warszawa online rejestracja"
+  - "przychodnia wielospecjalistyczna Warszawa"
+
+  # --- Inne specjalizacje medyczne ---
+  - "alergolog Warszawa prywatny"
+  - "alergolog dziecięcy Warszawa"
+  - "dermatolog Warszawa prywatny"
+  - "dermatolog Warszawa szybki termin"
+  - "ortopeda Warszawa prywatny"
+  - "neurolog Warszawa prywatny"
+  - "psychiatra Warszawa prywatny"
+  - "psycholog Warszawa"
+  - "psycholog dziecięcy Warszawa"
+  - "endokrynolog Warszawa prywatny"
+  - "ginekolog Warszawa prywatny"
+  - "urolog Warszawa prywatny"
+  - "okulista Warszawa prywatny"
+  - "kardiolog Warszawa prywatny"
+
+  # --- Intencje zakupowe / porównawcze ---
+  - "tania przychodnia Warszawa prywatna"
+  - "najlepsza przychodnia Warszawa"
+  - "ranking przychodni Warszawa"
+  - "przychodnia Warszawa opinie"
