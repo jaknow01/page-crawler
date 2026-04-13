@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "db": {
+      "command": "uv",
+      "args": ["run", "python", "-m", "src.mcp_server.db_server"],
+      "env": {
+        "QDRANT_URL": "${QDRANT_URL}",
+        "OPENAI_API_KEY": "${OPENAI_API_KEY}",
+        "EMBEDDING_MODEL": "${EMBEDDING_MODEL}",
+        "METADATA_MODE": "${METADATA_MODE}"
+      }
+    },
+    "firecrawl": {
+      "command": "npx",
+      "args": ["-y", "firecrawl-mcp@3.11.0"],
+      "env": {
+        "FIRECRAWL_API_KEY": "${FIRECRAWL_API_KEY}"
+      }
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@0.0.70"]
+    }
+  }
+}
