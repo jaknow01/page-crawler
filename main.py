@@ -212,14 +212,13 @@ def stats():
 # ── analyze ───────────────────────────────────────────────────────────────────
 
 @cli.command()
-@click.option("--n-clusters", default=None, type=int, help="Override number of clusters")
-def analyze(n_clusters):
+def analyze():
     """Run clustering, UMAP reduction and gap analysis on the vector database."""
     config = load_config()
     min_cluster_size = config.get("min_cluster_size", 5)
 
     click.echo("Step 1/3 — Clustering competitor pages...")
-    run_clustering(min_cluster_size=min_cluster_size, n_clusters=n_clusters)
+    run_clustering(min_cluster_size=min_cluster_size)
 
     click.echo("Step 2/3 — UMAP dimensionality reduction...")
     run_reduction()

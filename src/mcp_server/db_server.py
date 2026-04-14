@@ -36,15 +36,14 @@ from src.mcp_server.return_types import (
     OwnPagesResult,
     PageItem,
 )
+from src.qdrant_utils import COLLECTION as COLLECTION_NAME, QDRANT_URL, SCROLL_BATCH
 
 load_dotenv()
 
 # ── configuration ─────────────────────────────────────────────────────────────
 
-QDRANT_URL = os.environ.get("QDRANT_URL", "http://localhost:6333")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
-COLLECTION_NAME = "pages"
 VECTOR_SIZE = 1536  # text-embedding-3-small
 
 # Metadata generation mode: "llm" | "tfidf" — can be overridden via METADATA_MODE env var
@@ -301,7 +300,7 @@ def get_db_stats() -> DbStatsResult:
             scroll_filter=Filter(
                 must=[FieldCondition(key="source", match=MatchValue(value="competitor"))]
             ),
-            limit=256,
+            limit=SCROLL_BATCH,
             offset=offset,
             with_payload=["domain"],
             with_vectors=False,
@@ -336,7 +335,7 @@ def list_own_pages() -> OwnPagesResult:
             scroll_filter=Filter(
                 must=[FieldCondition(key="source", match=MatchValue(value="own"))]
             ),
-            limit=256,
+            limit=SCROLL_BATCH,
             offset=offset,
             with_payload=["url", "title"],
             with_vectors=False,
