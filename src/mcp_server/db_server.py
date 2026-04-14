@@ -37,6 +37,7 @@ from src.mcp_server.return_types import (
     PageItem,
 )
 from src.qdrant_utils import COLLECTION as COLLECTION_NAME, QDRANT_URL, SCROLL_BATCH
+from src.mcp_server.token_counter import TokenReport, token_counter
 
 load_dotenv()
 
@@ -80,6 +81,7 @@ def _embed(text: str) -> list[float]:
     """Compute an embedding vector via the OpenAI API."""
     text = text[:30_000]
     response = openai_client.embeddings.create(input=text, model=EMBEDDING_MODEL)
+    token_counter.add_embedding(response.usage.total_tokens)
     return response.data[0].embedding
 
 
@@ -140,6 +142,8 @@ def _metadata_llm(title: str, content: str) -> dict:
             response_format=_PageMetadata,
         )
         result = response.choices[0].message.parsed
+        usage = response.usage
+        token_counter.add_llm(usage.prompt_tokens, usage.completion_tokens)
         return {
             "summary": result.summary,
             "keywords": result.keywords,
@@ -350,6 +354,21 @@ def list_own_pages() -> OwnPagesResult:
             break
 
     return OwnPagesResult(pages=pages)
+
+
+@mcp.tool()
+def get_token_stats(total_pages: int = 0) -> TokenReport:
+    """
+    Return current OpenAI token usage and estimated cost.
+
+    Args:
+        total_pages: If provided, also return a projected cost extrapolated
+                     to this many pages based on the current average.
+
+    Returns:
+        TokenReport with token counts, cost estimate, and optional projection.
+    """
+    return token_counter.report(total_pages=total_pages or None)
 
 
 if __name__ == "__main__":
