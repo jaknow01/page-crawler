@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 # and WebFetch as a read-only fallback.
 ALLOWED_TOOLS = ",".join([
     "mcp__firecrawl__firecrawl_search",
+    "mcp__firecrawl__firecrawl_map",
     "mcp__firecrawl__firecrawl_crawl",
     "mcp__firecrawl__firecrawl_scrape",
     "mcp__db__add_page_to_db",
@@ -71,7 +72,7 @@ def run_agent(
         "--mcp-config", str(mcp_config_path),
         "--allowedTools", ALLOWED_TOOLS,
         "--output-format", "stream-json",
-        "--no-color",
+        "--verbose",
         "-p", prompt,
     ]
 

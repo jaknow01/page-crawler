@@ -44,13 +44,13 @@ For each result domain, call `check_domain_exists` with the domain name.
 - If `exists` is false → proceed to step 3.
 
 ### 3 — Crawl new domains
-For each new domain, use `firecrawl_crawl` to crawl the entire site:
-- Start URL: the result URL from step 1.
-- Limit: {max_pages} pages maximum.
-- Max depth: {max_depth}.
-- Stay within the same domain — do not follow links to external sites.
+For each new domain, use `firecrawl_map` to discover all URLs on that domain (start from the result URL from step 1).
+- IMPORTANT: Do NOT use `firecrawl_crawl` — its output is one large block that is too big to process.
+- Limit to {max_pages} URLs maximum.
+- Stay within the same domain — filter out any URLs from other domains.
 
-If `firecrawl_crawl` fails or is unavailable for a domain, fall back to `firecrawl_scrape` on the landing page only.
+Then scrape each URL individually using `firecrawl_scrape`.
+If `firecrawl_map` fails for a domain, fall back to `firecrawl_scrape` on the landing page only.
 
 ### 4 — Store pages
 For every page returned by the crawl, call `add_page_to_db` with:

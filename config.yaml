@@ -3,7 +3,7 @@
 # ============================================================
 
 # URL własnej strony internetowej (punkt startowy crawlingu)
-own_site_url: "https://example.com"
+own_site_url: "https://nobilismed.pl"
 
 # Liczba wyników Google analizowanych per zapytanie (top-k)
 k: 5
@@ -18,7 +18,7 @@ max_pages_per_domain: 100
 embedding_model: "text-embedding-3-small"
 
 # Minimalna liczba punktów tworzących klaster (HDBSCAN)
-min_cluster_size: 5
+min_cluster_size: 3
 
 # Próg odległości cosinus — poniżej tej wartości strona uważana jest za "pokrytą" w klastrze
 coverage_threshold: 0.3
