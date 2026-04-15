@@ -7,9 +7,7 @@ WORKDIR /app
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev
 
-COPY src/ui/app.py ./src/ui/app.py
-COPY src/__init__.py ./src/__init__.py
-COPY src/ui/__init__.py ./src/ui/__init__.py
+COPY src/ ./src/
 
 EXPOSE 8501
 

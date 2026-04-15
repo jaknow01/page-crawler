@@ -8,15 +8,36 @@ services:
       - ./data/qdrant:/qdrant/storage
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:6333/healthz"]
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/6333' 2>/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  crawler:
+    build:
+      context: .
+      dockerfile: src/crawler/Dockerfile
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+      - ./queries.yaml:/app/queries.yaml:ro
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - FIRECRAWL_API_KEY=${FIRECRAWL_API_KEY}
+      - QDRANT_URL=http://qdrant:6333
+      - CRAWLER_WORKERS=${CRAWLER_WORKERS:-1}
+    depends_on:
+      qdrant:
+        condition: service_healthy
+    profiles:
+      - crawler
+
   ui:
     build:
-      context: ./src/ui
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: src/ui/Dockerfile
     ports:
       - "8501:8501"
     environment:
@@ -25,7 +46,3 @@ services:
       qdrant:
         condition: service_healthy
     restart: unless-stopped
-
-# Uwaga: orchestrator i agenci Claude Code działają na hoście,
-# nie w kontenerze — wymagają dostępu do claude CLI i ~/.claude
-# MCP db_server jest uruchamiany przez claude jako subprocess (stdio)
