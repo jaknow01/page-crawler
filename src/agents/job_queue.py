@@ -148,6 +148,15 @@ class JobQueue:
             "failed_queries": [{"query": r["query"], "error": r["error"]} for r in failed],
         }
 
+    def reset_to_pending(self, query: str) -> None:
+        """Return an in-progress job back to pending (e.g. after a usage limit hit)."""
+        with self._connect() as conn:
+            conn.execute(
+                "UPDATE jobs SET status='pending', started_at=NULL WHERE query=?",
+                (query,),
+            )
+            conn.commit()
+
     def retry_failed(self) -> int:
         """Reset all failed jobs back to pending. Returns the number of reset jobs."""
         with self._connect() as conn:

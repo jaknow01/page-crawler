@@ -9,13 +9,97 @@ filesystem or shell — only the explicitly listed MCP tools and WebFetch.
 import json
 import logging
 import subprocess
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from src.agents.job_queue import JobQueue
 
 logger = logging.getLogger(__name__)
+
+# Maximum time to wait after a usage limit hit before retrying (5 hours).
+USAGE_LIMIT_WAIT_SECONDS = 5 * 3600
+
+# Keywords that indicate a Claude Code session usage limit error.
+_USAGE_LIMIT_KEYWORDS = [
+    "usage limit",
+    "rate limit",
+    "too many requests",
+    "claude ai usage",
+    "exceeded your",
+    "quota exceeded",
+    "please slow down",
+]
+
+
+class UsageLimitError(RuntimeError):
+    """Raised when the Claude Code CLI hits its session usage limit."""
+
+    def __init__(self, message: str, resume_at: float | None = None) -> None:
+        super().__init__(message)
+        # True when reset time was parsed from the error message (exact).
+        # False when falling back to a 5h ceiling (probe strategy).
+        self.resume_at_is_exact = resume_at is not None
+        self.resume_at = resume_at if resume_at is not None else (time.time() + USAGE_LIMIT_WAIT_SECONDS)
+
+
+def _parse_resume_at(error_msg: str) -> float | None:
+    """
+    Try to extract a reset timestamp from the Claude Code error message.
+    Claude Code sometimes emits "Your limit resets at HH:MM AM/PM UTC".
+    Returns epoch float (+60s safety buffer), or None if not parseable.
+    """
+    import re
+    # Pattern: "resets at 3:45 PM UTC" or "resets at 15:45 UTC"
+    match = re.search(r"resets? at (\d{1,2}:\d{2}(?:\s*[AP]M)?\s*UTC)", error_msg, re.IGNORECASE)
+    if not match:
+        return None
+    try:
+        from datetime import timedelta
+        time_str = match.group(1).strip().upper()
+        fmt = "%I:%M %p UTC" if "AM" in time_str or "PM" in time_str else "%H:%M UTC"
+        now = datetime.now(timezone.utc)
+        parsed = datetime.strptime(time_str, fmt).replace(
+            year=now.year, month=now.month, day=now.day, tzinfo=timezone.utc
+        )
+        # If the parsed time is in the past, assume it's tomorrow.
+        if parsed.timestamp() < now.timestamp():
+            parsed += timedelta(days=1)
+        # +60s buffer — Anthropic's interval may be open-ended.
+        return (parsed + timedelta(seconds=60)).timestamp()
+    except Exception:
+        return None
+
+
+def _check_usage_limit(text: str) -> None:
+    """Raise UsageLimitError if text contains usage limit indicators."""
+    lower = text.lower()
+    if any(kw in lower for kw in _USAGE_LIMIT_KEYWORDS):
+        resume_at = _parse_resume_at(text)
+        raise UsageLimitError(text, resume_at=resume_at)
+
+
+def _probe_usage_limit() -> bool:
+    """
+    Send a minimal request to Claude to check if the usage limit is still active.
+    Returns True if still limited, False if we can resume.
+    """
+    try:
+        result = subprocess.run(
+            ["claude", "--output-format", "stream-json", "-p", "reply with: ok"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+        combined = result.stdout + result.stderr
+        return any(kw in combined.lower() for kw in _USAGE_LIMIT_KEYWORDS)
+    except Exception as exc:
+        logger.debug("Usage limit probe failed: %s — assuming still limited", exc)
+        return True
+
 
 # Tools the agent is allowed to use without user confirmation.
 # Covers: Firecrawl (search/crawl/scrape), custom DB MCP, Playwright,
@@ -120,12 +204,14 @@ def run_agent(
             if subtype == "error":
                 error_msg = event.get("error", "unknown error")
                 logger.error("Agent reported error: %s", error_msg)
+                _check_usage_limit(error_msg)
 
     process.wait()
 
     stderr_output = process.stderr.read()
     if stderr_output:
         logger.debug("Agent stderr: %s", stderr_output)
+        _check_usage_limit(stderr_output)
 
     if process.returncode != 0:
         raise RuntimeError(
@@ -162,9 +248,91 @@ def run_agents_parallel(
     done_count = 0
     failed_count = 0
 
+    # Shared pause state.
+    # _resume_at[0]       — epoch time after which workers may resume
+    # _resume_is_exact[0] — True if the time came from the error message (probe skipped),
+    #                       False if it's a fallback (probe every hour)
+    # _limit_start[0]     — epoch time when the limit was first hit (fallback ceiling)
+    _pause_lock = threading.Lock()
+    _resume_at: list[float] = []
+    _resume_is_exact: list[bool] = []
+    _limit_start: list[float] = []
+
+    # Only one worker probes at a time; others wait for the probe to finish.
+    _probe_lock = threading.Lock()
+
+    def _clear_pause() -> None:
+        _resume_at.clear()
+        _resume_is_exact.clear()
+        _limit_start.clear()
+
+    def _wait_if_paused() -> None:
+        while True:
+            with _pause_lock:
+                if not _resume_at:
+                    return  # no active pause
+                exact = _resume_is_exact[0]
+                deadline = _resume_at[0]
+                started = _limit_start[0]
+
+            now = time.time()
+
+            if exact:
+                # Exact reset time known — sleep until then, then clear.
+                if now >= deadline:
+                    with _pause_lock:
+                        _clear_pause()
+                    return
+                wait_secs = deadline - now
+                logger.info(
+                    "[worker] usage limit pause (exact) — %d min remaining",
+                    int(wait_secs / 60),
+                )
+                time.sleep(min(wait_secs, 60))
+
+            else:
+                # No exact time — probe Claude every hour, max 5h from limit start.
+                hard_ceiling = started + USAGE_LIMIT_WAIT_SECONDS
+                if now >= hard_ceiling:
+                    logger.warning("[worker] usage limit: 5h ceiling reached — resuming anyway")
+                    with _pause_lock:
+                        _clear_pause()
+                    return
+
+                if now >= deadline:
+                    # Time for a probe — only one worker at a time.
+                    if _probe_lock.acquire(blocking=False):
+                        try:
+                            logger.info("[worker] probing Claude for usage limit status...")
+                            still_limited = _probe_usage_limit()
+                            if not still_limited:
+                                logger.info("[worker] usage limit cleared — resuming")
+                                with _pause_lock:
+                                    _clear_pause()
+                                return
+                            # Still limited — push next probe 1h forward.
+                            logger.info("[worker] still limited — next probe in 60 min")
+                            with _pause_lock:
+                                if _resume_at:
+                                    _resume_at[0] = time.time() + 3600
+                        finally:
+                            _probe_lock.release()
+                    else:
+                        # Another worker is probing — wait a moment and re-check.
+                        time.sleep(5)
+                else:
+                    mins_left = int((deadline - now) / 60)
+                    logger.info(
+                        "[worker] usage limit pause (probe in %d min)",
+                        mins_left,
+                    )
+                    time.sleep(min(deadline - now, 60))
+
     def _worker() -> None:
         nonlocal done_count, failed_count
         while True:
+            _wait_if_paused()
+
             query = queue.claim_next()
             if query is None:
                 break  # queue exhausted
@@ -178,6 +346,26 @@ def run_agents_parallel(
                 queue.mark_done(query)
                 done_count += 1
                 logger.info("[worker] done: %r", query)
+            except UsageLimitError as exc:
+                # Return the job to the queue and pause all workers.
+                queue.reset_to_pending(query)
+                exact = exc.resume_at_is_exact
+                with _pause_lock:
+                    if not _resume_at:
+                        _resume_at.append(exc.resume_at)
+                        _resume_is_exact.append(exact)
+                        _limit_start.append(time.time())
+                    else:
+                        _resume_at[0] = max(_resume_at[0], exc.resume_at)
+                        # Once we have an exact time, keep it exact.
+                        if exact:
+                            _resume_is_exact[0] = True
+                resume_dt = datetime.fromtimestamp(_resume_at[0], tz=timezone.utc).strftime("%H:%M UTC")
+                mode = "exact" if _resume_is_exact[0] else "probe every 1h, max 5h"
+                logger.warning(
+                    "[worker] usage limit hit on %r — pausing until %s (%s)",
+                    query, resume_dt, mode,
+                )
             except Exception as exc:
                 error_msg = str(exc)
                 queue.mark_failed(query, error_msg)
