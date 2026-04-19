@@ -61,6 +61,11 @@ def resolve_workers(config: dict) -> int:
     return int(config.get("crawler_workers", 1))
 
 
+def resolve_model(config: dict) -> str | None:
+    """CLAUDE_CRAWLER_MODEL env var takes priority over config.yaml."""
+    return os.environ.get("CLAUDE_CRAWLER_MODEL") or config.get("crawler_model") or None
+
+
 # ── CLI group ─────────────────────────────────────────────────────────────────
 
 @click.group()
@@ -79,7 +84,8 @@ def crawl_own(metadata_mode):
     max_pages = config.get("max_pages_per_domain", 100)
     mode = metadata_mode or config.get("metadata_mode", os.environ.get("METADATA_MODE", "tfidf"))
 
-    click.echo(f"Crawling own site: {own_site_url} (max {max_pages} pages, metadata={mode})")
+    model = resolve_model(config)
+    click.echo(f"Crawling own site: {own_site_url} (max {max_pages} pages, metadata={mode}, model={model or 'default'})")
 
     prompt = build_own_site_prompt(
         own_site_url=own_site_url,
@@ -87,7 +93,7 @@ def crawl_own(metadata_mode):
         metadata_mode=mode,
     )
 
-    run_agent(prompt=prompt, mcp_config_path=MCP_CONFIG_PATH, cwd=ROOT)
+    run_agent(prompt=prompt, mcp_config_path=MCP_CONFIG_PATH, cwd=ROOT, model=model)
     click.echo("Own site crawl complete.")
 
 
@@ -106,12 +112,13 @@ def crawl_competitors(workers, query_limit, reset, metadata_mode):
     max_pages = config.get("max_pages_per_domain", 100)
     max_depth = config.get("max_depth", 3)
     mode = metadata_mode or config.get("metadata_mode", os.environ.get("METADATA_MODE", "tfidf"))
+    model = resolve_model(config)
 
     queries = load_queries()
     if query_limit:
         queries = queries[:query_limit]
 
-    click.echo(f"Queries: {len(queries)} | Workers: {n_workers} | k={k} | metadata={mode}")
+    click.echo(f"Queries: {len(queries)} | Workers: {n_workers} | k={k} | metadata={mode} | model={model or 'default'}")
 
     queue = JobQueue(JOBS_DB_PATH)
     queue.initialize(queries, reset=reset)
@@ -139,6 +146,7 @@ def crawl_competitors(workers, query_limit, reset, metadata_mode):
         workers=n_workers,
         mcp_config_path=MCP_CONFIG_PATH,
         cwd=ROOT,
+        model=model,
     )
 
     click.echo(f"\nDone: {result['done']} | Failed: {result['failed']}")

@@ -8,6 +8,7 @@ filesystem or shell — only the explicitly listed MCP tools and WebFetch.
 
 import json
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -20,18 +21,34 @@ from src.agents.job_queue import JobQueue
 
 logger = logging.getLogger(__name__)
 
+
+def _env_int(name: str, default: int) -> int:
+    value = os.getenv(name)
+    if value is None or value.strip() == "":
+        return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
+
+
 # Maximum time to wait after a usage limit hit before retrying (5 hours).
 USAGE_LIMIT_WAIT_SECONDS = 5 * 3600
+
+# Probe for usage limits if the agent is silent this long.
+INACTIVITY_PROBE_SECONDS = _env_int("INACTIVITY_PROBE_SECONDS", 15 * 60)
 
 # Keywords that indicate a Claude Code session usage limit error.
 _USAGE_LIMIT_KEYWORDS = [
     "usage limit",
     "rate limit",
     "too many requests",
+    "hit your limit",
     "claude ai usage",
     "exceeded your",
     "quota exceeded",
     "please slow down",
+    "api error: terminated",  # Claude Code CLI termination due to limit
 ]
 
 
@@ -53,14 +70,21 @@ def _parse_resume_at(error_msg: str) -> float | None:
     Returns epoch float (+60s safety buffer), or None if not parseable.
     """
     import re
-    # Pattern: "resets at 3:45 PM UTC" or "resets at 15:45 UTC"
-    match = re.search(r"resets? at (\d{1,2}:\d{2}(?:\s*[AP]M)?\s*UTC)", error_msg, re.IGNORECASE)
+    # Patterns like "resets at 3:45 PM UTC" or "resets 5pm (UTC)"
+    match = re.search(
+        r"resets?\s*(?:at\s*)?(\d{1,2}(?::\d{2})?\s*[AP]M|\d{1,2}:\d{2})\s*\(?UTC\)?",
+        error_msg,
+        re.IGNORECASE,
+    )
     if not match:
         return None
     try:
         from datetime import timedelta
         time_str = match.group(1).strip().upper()
-        fmt = "%I:%M %p UTC" if "AM" in time_str or "PM" in time_str else "%H:%M UTC"
+        if "AM" in time_str or "PM" in time_str:
+            fmt = "%I%p" if ":" not in time_str else "%I:%M %p"
+        else:
+            fmt = "%H:%M"
         now = datetime.now(timezone.utc)
         parsed = datetime.strptime(time_str, fmt).replace(
             year=now.year, month=now.month, day=now.day, tzinfo=timezone.utc
@@ -87,6 +111,14 @@ def _probe_usage_limit() -> bool:
     Send a minimal request to Claude to check if the usage limit is still active.
     Returns True if still limited, False if we can resume.
     """
+    limited, _ = _probe_usage_limit_info()
+    return limited
+
+
+def _probe_usage_limit_info() -> tuple[bool, float | None]:
+    """
+    Like _probe_usage_limit, but also returns a parsed resume time when available.
+    """
     try:
         result = subprocess.run(
             ["claude", "--output-format", "stream-json", "-p", "reply with: ok"],
@@ -95,10 +127,12 @@ def _probe_usage_limit() -> bool:
             timeout=30,
         )
         combined = result.stdout + result.stderr
-        return any(kw in combined.lower() for kw in _USAGE_LIMIT_KEYWORDS)
+        limited = any(kw in combined.lower() for kw in _USAGE_LIMIT_KEYWORDS)
+        resume_at = _parse_resume_at(combined) if limited else None
+        return limited, resume_at
     except Exception as exc:
         logger.debug("Usage limit probe failed: %s — assuming still limited", exc)
-        return True
+        return True, None
 
 
 # Tools the agent is allowed to use without user confirmation.
@@ -128,6 +162,7 @@ def run_agent(
     prompt: str,
     mcp_config_path: str | Path = "mcp_config.json",
     cwd: str | Path | None = None,
+    model: str | None = None,
 ) -> str:
     """
     Run a Claude Code agent as a subprocess and stream its output.
@@ -156,9 +191,12 @@ def run_agent(
         "--mcp-config", str(mcp_config_path),
         "--allowedTools", ALLOWED_TOOLS,
         "--output-format", "stream-json",
+        "--no-session-persistence",  # each worker starts clean, no prior runs loaded
         "--verbose",
         "-p", prompt,
     ]
+    if model:
+        cmd += ["--model", model]
 
     logger.debug("Spawning agent: %s", " ".join(cmd[:4]))
 
@@ -171,51 +209,133 @@ def run_agent(
     )
 
     output_parts: list[str] = []
+    saw_output = False
+
+    last_activity_at = [time.time()]
+    next_probe_at = [last_activity_at[0] + INACTIVITY_PROBE_SECONDS]
+    activity_lock = threading.Lock()
+    watchdog_stop = threading.Event()
+    limit_exception: list[UsageLimitError | None] = [None]
+
+    def _mark_activity() -> None:
+        now = time.time()
+        with activity_lock:
+            last_activity_at[0] = now
+            next_probe_at[0] = now + INACTIVITY_PROBE_SECONDS
+
+    def _terminate_process() -> None:
+        try:
+            process.terminate()
+        except Exception:
+            pass
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+    def _watchdog() -> None:
+        while not watchdog_stop.is_set():
+            time.sleep(5)
+            if watchdog_stop.is_set():
+                break
+            with activity_lock:
+                now = time.time()
+                if now < next_probe_at[0]:
+                    continue
+                idle_seconds = now - last_activity_at[0]
+            idle_mins = max(1, int(idle_seconds / 60))
+            logger.info("[agent] no output for %d min — probing usage limit", idle_mins)
+            limited, resume_at = _probe_usage_limit_info()
+            if limited:
+                limit_exception[0] = UsageLimitError("usage limit probe: denied", resume_at=resume_at)
+                watchdog_stop.set()
+                _terminate_process()
+                return
+            with activity_lock:
+                next_probe_at[0] = time.time() + INACTIVITY_PROBE_SECONDS
+
+    watchdog_thread = threading.Thread(target=_watchdog, daemon=True)
+    watchdog_thread.start()
 
     # Stream stdout line by line, parse stream-json events
-    for raw_line in process.stdout:
-        raw_line = raw_line.strip()
-        if not raw_line:
-            continue
-        try:
-            event = json.loads(raw_line)
-        except json.JSONDecodeError:
-            # Non-JSON line (e.g. MCP server startup messages) — print as-is
-            print(raw_line, flush=True)
-            continue
+    try:
+        for raw_line in process.stdout:
+            raw_line = raw_line.strip()
+            if not raw_line:
+                continue
+            _mark_activity()
+            if not saw_output:
+                saw_output = True
+                logger.info("[agent] output stream started")
+            # Check every line (JSON or not) for usage limit hints.
+            _check_usage_limit(raw_line)
+            try:
+                event = json.loads(raw_line)
+            except json.JSONDecodeError:
+                # Non-JSON line (e.g. MCP server startup messages)
+                print(raw_line, flush=True)
+                continue
 
-        event_type = event.get("type", "")
+            event_type = event.get("type", "")
 
-        if event_type == "assistant":
-            # Extract text content from assistant message blocks
-            for block in event.get("message", {}).get("content", []):
-                if block.get("type") == "text":
-                    text = block["text"]
-                    output_parts.append(text)
-                    print(text, end="", flush=True)
+            if event_type == "assistant":
+                # Extract text content from assistant message blocks
+                for block in event.get("message", {}).get("content", []):
+                    if block.get("type") == "text":
+                        text = block["text"]
+                        output_parts.append(text)
+                        print(text, end="", flush=True)
 
-        elif event_type == "tool_use":
-            tool = event.get("name", "unknown")
-            logger.info("[tool] %s", tool)
+            elif event_type == "tool_use":
+                tool = event.get("name", "unknown")
+                logger.info("[tool] %s", tool)
 
-        elif event_type == "result":
-            # Final result event — subtype indicates success or error
-            subtype = event.get("subtype", "")
-            if subtype == "error":
-                error_msg = event.get("error", "unknown error")
-                logger.error("Agent reported error: %s", error_msg)
-                _check_usage_limit(error_msg)
+            elif event_type == "rate_limit_event":
+                # Claude Code emits this when approaching or hitting the 5-hour limit.
+                info = event.get("rate_limit_info", {})
+                if info.get("status") == "denied":
+                    resets_at = info.get("resetsAt")
+                    resume_at = (resets_at + 60) if resets_at else None  # +60s buffer
+                    raise UsageLimitError(
+                        f"rate_limit_event: denied (resetsAt={resets_at})",
+                        resume_at=resume_at,
+                    )
+
+            elif event_type == "result":
+                # Final result event — subtype indicates success or error
+                subtype = event.get("subtype", "")
+                if subtype == "error":
+                    error_msg = event.get("error", "unknown error")
+                    logger.error("Agent reported error: %s", error_msg)
+                    _check_usage_limit(error_msg)
+    except UsageLimitError:
+        watchdog_stop.set()
+        _terminate_process()
+        raise
+    finally:
+        watchdog_stop.set()
+        watchdog_thread.join(timeout=1)
 
     process.wait()
 
     stderr_output = process.stderr.read()
     if stderr_output:
+        if not saw_output:
+            saw_output = True
+            logger.info("[agent] stderr output received before stdout")
         logger.debug("Agent stderr: %s", stderr_output)
         _check_usage_limit(stderr_output)
 
+    if limit_exception[0] is not None:
+        raise limit_exception[0]
+
     if process.returncode != 0:
+        no_output_note = " (no output received)" if not saw_output else ""
         raise RuntimeError(
-            f"claude subprocess exited with code {process.returncode}.\n"
+            f"claude subprocess exited with code {process.returncode}{no_output_note}.\n"
             f"stderr: {stderr_output}"
         )
 
@@ -228,6 +348,7 @@ def run_agents_parallel(
     workers: int = 1,
     mcp_config_path: str | Path = "mcp_config.json",
     cwd: str | Path | None = None,
+    model: str | None = None,
 ) -> dict:
     """
     Run up to `workers` Claude Code agents in parallel, each consuming one
@@ -342,6 +463,7 @@ def run_agents_parallel(
                     prompt=prompt_fn(query),
                     mcp_config_path=mcp_config_path,
                     cwd=cwd,
+                    model=model,
                 )
                 queue.mark_done(query)
                 done_count += 1

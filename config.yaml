@@ -9,7 +9,7 @@ own_site_url: "https://nobilismed.pl"
 k: 5
 
 # Maksymalna głębokość crawlowania podstron konkurencji
-max_depth: 3
+max_depth: 4
 
 # Limit podstron per domena (zabezpieczenie przed bardzo dużymi serwisami)
 max_pages_per_domain: 100
@@ -29,3 +29,8 @@ language: "pl"
 # Liczba równoległych instancji agenta Claude Code podczas crawlowania konkurencji
 # Można nadpisać zmienną środowiskową CRAWLER_WORKERS
 crawler_workers: 1
+
+# Model używany przez agenta crawlującego (subprocess claude CLI)
+# Aliasy: "sonnet", "haiku", "opus" — lub pełne ID np. "claude-sonnet-4-6"
+# Można nadpisać zmienną środowiskową CLAUDE_CRAWLER_MODEL
+crawler_model: "sonnet"
