@@ -9,8 +9,8 @@ RUN apt-get update && apt-get install -y curl build-essential && \
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
 
-# Install claude Code CLI
-RUN npm install -g @anthropic-ai/claude-code
+# Install Claude Code CLI + Firecrawl CLI
+RUN npm install -g @anthropic-ai/claude-code firecrawl-cli
 
 WORKDIR /app
 
@@ -23,6 +23,8 @@ RUN uv sync --frozen --no-dev
 COPY src/ ./src/
 COPY main.py ./
 COPY mcp_config.json ./
+COPY src/crawler/entrypoint.sh ./entrypoint.sh
+RUN chmod +x entrypoint.sh
 
-ENTRYPOINT ["uv", "run", "python", "main.py"]
+ENTRYPOINT ["./entrypoint.sh"]
 CMD ["--help"]

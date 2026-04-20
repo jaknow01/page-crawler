@@ -40,8 +40,9 @@ Extract the URL and domain of each result.
 
 ### 2 — Filter known domains
 For each result domain, call `check_domain_exists` with the domain name.
-- If `exists` is true → skip this domain entirely (already crawled by a previous run or another worker).
-- If `exists` is false → proceed to step 3.
+- If `exists` is false → proceed to step 3 (new domain, crawl fully).
+- If `exists` is true AND `page_count` >= 5 → skip this domain (already crawled sufficiently).
+- If `exists` is true AND `page_count` < 5 → proceed to step 3 anyway (domain was barely scraped before, needs a full crawl).
 
 ### 3 — Crawl new domains
 For each new domain, use `firecrawl_map` to discover all URLs on that domain (start from the result URL from step 1).
@@ -50,7 +51,8 @@ For each new domain, use `firecrawl_map` to discover all URLs on that domain (st
 - Stay within the same domain — filter out any URLs from other domains.
 
 Then scrape each URL individually using `firecrawl_scrape`.
-If `firecrawl_map` fails for a domain, fall back to `firecrawl_scrape` on the landing page only.
+If `firecrawl_map` returns no URLs or fails, call `firecrawl_scrape` on the root domain URL and on any subpage URLs found in its content — do NOT stop at just the landing page.
+A domain with fewer than 3 pages stored is considered incomplete — always try to find and scrape more subpages.
 
 ### 4 — Store pages
 For every page returned by the crawl, call `add_page_to_db` with:

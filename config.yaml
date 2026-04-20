@@ -33,4 +33,4 @@ crawler_workers: 1
 # Model używany przez agenta crawlującego (subprocess claude CLI)
 # Aliasy: "sonnet", "haiku", "opus" — lub pełne ID np. "claude-sonnet-4-6"
 # Można nadpisać zmienną środowiskową CLAUDE_CRAWLER_MODEL
-crawler_model: "sonnet"
+crawler_model: "haiku"

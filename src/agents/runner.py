@@ -154,6 +154,7 @@ ALLOWED_TOOLS = ",".join([
     "mcp__playwright__browser_type",
     "mcp__playwright__browser_wait_for",
     "mcp__playwright__browser_close",
+    "Bash(firecrawl *)",
     "WebFetch",
 ])
 
