@@ -115,11 +115,11 @@ def run_clustering(
     # Normalise to unit length — improves cosine-based clustering
     vectors_normed = normalize(vectors, norm="l2")
 
-    logger.info("Running HDBSCAN (min_cluster_size=%d)...", min_cluster_size)
+    logger.info("Running HDBSCAN (min_cluster_size=%d, selection=leaf)...", min_cluster_size)
     clusterer = hdbscan.HDBSCAN(
         min_cluster_size=min_cluster_size,
         metric="euclidean",  # on normalised vectors ≈ cosine
-        cluster_selection_method="eom",
+        cluster_selection_method="leaf",
     )
     labels = clusterer.fit_predict(vectors_normed)
 
