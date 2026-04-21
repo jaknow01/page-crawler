@@ -34,6 +34,8 @@ Zmienne srodowiskowe (przyklad):
 ### Uwaga
 Dla wielu zadanych queries działanie tego programu prawdopodobnie wykorzysta wszystkie tokeny sesji Claude Code (nawet dla słabszego modelu Haiku). W przypadku osiągnięcia limitu 5-godzinnej sesji program zatrzyma się i będzie oczekiwał na zresetowanie limitu, po czym kontynuuje pracę. W dowolnym momencie możesz przerwać pracę systemu - wyniki crawlowania są na bieżąco zapisywane w bazie, a zadania w kolejce zostaną zapamiętane.
 
+Dodatkowo upewnij się że posiadasz wystarczającą liczbę kredytów w Firecrawl API.
+
 ## Szybki start (docker)
 
 1) Infrastruktura:
