@@ -31,6 +31,9 @@ Zmienne srodowiskowe (przyklad):
 - ANTHROPIC_API_KEY lub CLAUDE_CODE_OAUTH_TOKEN
 - QDRANT_URL (domyslnie http://localhost:6333)
 
+### Uwaga
+Dla wielu zadanych queries działanie tego programu prawdopodobnie wykorzysta wszystkie tokeny sesji Claude Code (nawet dla słabszego modelu Haiku). W przypadku osiągnięcia limitu 5-godzinnej sesji program zatrzyma się i będzie oczekiwał na zresetowanie limitu, po czym kontynuuje pracę. W dowolnym momencie możesz przerwać pracę systemu - wyniki crawlowania są na bieżąco zapisywane w bazie, a zadania w kolejce zostaną zapamiętane.
+
 ## Szybki start (docker)
 
 1) Infrastruktura:
